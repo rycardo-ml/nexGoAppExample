@@ -16,17 +16,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-
-
-
-        <!-- EXTERNAL RECEVIVERS -->
-        <receiver android:name=".external.NexGoLedReceiver" >
-            <intent-filter>
-                <action android:name="POS_LED_REQUEST" />
-            </intent-filter>
-        </receiver>
-
     </application>
 
 </manifest>

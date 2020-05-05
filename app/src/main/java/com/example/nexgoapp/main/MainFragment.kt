@@ -1,4 +1,4 @@
-package com.example.nexgoapp.main.ui
+package com.example.nexgoapp.main
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -18,7 +18,15 @@ import androidx.lifecycle.ViewModelProviders
 import com.example.nexgoapp.R
 import com.example.nexgoapp.main.model.LedVO
 import com.example.nexgoapp.main.model.MainViewModel
+import com.example.nexgoapp.util.SmartPosServiceConnection
+import com.example.nexgoapp.util.bindSmartPosService
+import com.example.nexgoapp.util.receivers.LedReceiver
+import com.example.nexgoapp.util.unbindSmartPosService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import java.lang.Exception
+import java.util.concurrent.atomic.AtomicInteger
 
 
 class MainFragment : Fragment() {
@@ -29,21 +37,15 @@ class MainFragment : Fragment() {
         fun newInstance() = MainFragment()
     }
 
+    private val smartPosConnection = SmartPosServiceConnection()
+    private val ledReceiver = LedReceiver({color, active -> viewModel.toggleLed(color, active)}, { message -> showError(message) })
+
     private lateinit var viewModel: MainViewModel
 
     private lateinit var tvLedRed: TextView
     private lateinit var tvLedGreen: TextView
     private lateinit var tvLedBlue: TextView
     private lateinit var tvLedYellow: TextView
-
-    private val ledReceiver = object: BroadcastReceiver() {
-        override fun onReceive(ctx: Context?, responseIntent: Intent?) {
-            Log.d(TAG, "ledReceiver")
-            responseIntent ?: return
-
-            handleLedResponse(responseIntent)
-        }
-    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         return inflater.inflate(R.layout.main_fragment, container, false)
@@ -64,6 +66,22 @@ class MainFragment : Fragment() {
         tvLedYellow = view.findViewById(R.id.frg_main_tv_yellow)
 
         setLedListeners()
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        activity?.run {
+            bindSmartPosService(this,  smartPosConnection)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+
+        activity?.run {
+            unbindSmartPosService(this,  smartPosConnection)
+        }
     }
 
     private fun setModelListeners() {
@@ -107,48 +125,28 @@ class MainFragment : Fragment() {
     }
 
     private fun sendLedEvent(ledVO: LedVO) {
-        val intent = Intent().apply {
-            action = "POS_LED_REQUEST"
 
-            putExtra("color", ledVO.color.description)
-            putExtra("active", !ledVO.active)
+        ledReceiver.registerReceiver(context!!)
 
-            putExtra("responseType", "BROADCAST_RECEIVER")
-            putExtra("responseAction", "POS_LED_RESPONSE")
+//        val intent = Intent().apply {
+//            action = "POS_LED_REQUEST"
+//
+//            putExtra("color", ledVO.color.description)
+//            putExtra("active", !ledVO.active)
+//
+//            putExtra("responseType", "BROADCAST_RECEIVER")
+//            putExtra("responseAction", "POS_LED_RESPONSE")
+//
+//            addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+//        }
+//        context!!.sendBroadcast(intent)
 
-            addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+        GlobalScope.launch(Dispatchers.Default) {
+            smartPosConnection.service.toggleLed(ledVO.color.description, !ledVO.active, "POS_LED_RESPONSE")
         }
-
-        val filter = IntentFilter().apply {
-            addAction("POS_LED_RESPONSE")
-        }
-
-        context!!.registerReceiver(ledReceiver, filter)
-        context!!.sendBroadcast(intent)
-    }
-
-    private fun handleLedResponse(responseIntent: Intent) {
-        context!!.unregisterReceiver(ledReceiver)
-
-        Log.d(TAG, "handling led response")
-
-        if (!responseIntent.getBooleanExtra("success", false)) {
-            showError(getErrorMessage(responseIntent))
-            return
-        }
-
-        val color = responseIntent.getStringExtra("color") ?: throw Exception("color not found")
-        val active = responseIntent.getBooleanExtra("active", false)
-
-        viewModel.toggleLed(color, active)
     }
 
     private fun showError(message: String) {
         Toast.makeText(context!!, message, Toast.LENGTH_LONG).show()
-    }
-
-    private fun getErrorMessage(responseIntent: Intent): String {
-        val value = responseIntent.getStringExtra("messageError")
-        return value ?: "Nao foi possivel identificar o problema ocorrido"
     }
 }
